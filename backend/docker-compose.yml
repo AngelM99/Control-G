@@ -1,0 +1,70 @@
+services:
+
+  # ─── PHP 8.3-FPM (app) ───────────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: controlg_app
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - .:/var/www/html
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+    # NOTA: Puerto 9000 NO se expone al host (para no colisionar con puertos ocupados)
+    #       Nginx se comunica con app internamente vía red 'controlg'.
+    networks:
+      - controlg
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ─── Nginx (web) ─────────────────────────────────────────────────────────────
+  web:
+    image: nginx:1.25-alpine
+    container_name: controlg_web
+    restart: unless-stopped
+    ports:
+      - "8050:80"        # Puerto alternativo (8050) para evitar colisiones
+    volumes:
+      - .:/var/www/html
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - controlg
+    depends_on:
+      - app
+
+  # ─── MySQL 8.0 (db) ──────────────────────────────────────────────────────────
+  db:
+    image: mysql:8.0
+    container_name: controlg_db
+    restart: unless-stopped
+    ports:
+      - "3308:3306"      # Puerto alternativo (3308) para evitar colisiones
+    environment:
+      MYSQL_ROOT_PASSWORD: secret
+      MYSQL_DATABASE: control_g
+    volumes:
+      - dbdata:/var/lib/mysql
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-psecret"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    networks:
+      - controlg
+
+volumes:
+  dbdata:
+    driver: local
+
+networks:
+  controlg:
+    driver: bridge

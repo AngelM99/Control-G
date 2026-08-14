@@ -1,0 +1,85 @@
+services:
+  # ─── PHP-FPM + Laravel ──────────────────────────────────────────────
+  app:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: controlgapp
+    working_dir: /var/www/html
+    volumes:
+      - ./backend:/var/www/html
+    environment:
+      APP_ENV: local
+      APP_KEY: base64:G/nbB6WZ7wa2XMfcW3ZGa0soLreLJhy+G2Nw6ZrVr/I=
+      APP_DEBUG: "true"
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: control_g
+      DB_USERNAME: controlguser
+      DB_PASSWORD: secret
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - controlg
+
+  # ─── Nginx ──────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: controlgnginx
+    ports:
+      - "8050:80"
+    volumes:
+      - ./backend:/var/www/html
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - app
+    networks:
+      - controlg
+
+  # ─── MySQL 8 ────────────────────────────────────────────────────────
+  db:
+    image: mysql:8.0
+    container_name: controlgdb
+    ports:
+      - "3308:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: rootsecret
+      MYSQL_DATABASE: control_g
+      MYSQL_USER: controlguser
+      MYSQL_PASSWORD: secret
+    volumes:
+      - dbdata:/var/lib/mysql
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "controlguser", "-psecret"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - controlg
+
+  # ─── Frontend (React + Vite) ────────────────────────────────────────
+  frontend:
+    image: node:20-alpine
+    container_name: controlgfrontend
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    command: sh -c "npm install && npm run dev"
+    networks:
+      - controlg
+    depends_on:
+      - app
+
+volumes:
+  dbdata:
+    driver: local
+
+networks:
+  controlg:
+    driver: bridge

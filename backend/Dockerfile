@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libxml2-dev \
         unzip \
         zip \
+        ca-certificates \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j$(nproc) \
         pdo \
@@ -31,16 +32,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ── Composer ───────────────────────────────────────────────────────────────────
 COPY --from=composer:2.7 /usr/bin/composer /usr/bin/composer
 
-# ── Configuración PHP para producción/staging ──────────────────────────────────
-RUN cp "$PHP_INI_DIR/php.ini-development" "$PHP_INI_DIR/php.ini"
+# ── Configuración PHP ──────────────────────────────────────────────────────────
+RUN cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
 
 WORKDIR /var/www/html
 
-# ── Permisos storage ──────────────────────────────────────────────────────────
+# ── Copiar el código del proyecto al contenedor ───────────────────────────────
+COPY . /var/www/html
+
+# ── Instalar dependencias PHP de producción ────────────────────────────────────
+RUN composer install --no-dev --optimize-autoloader --no-interaction
+
+# ── Permisos storage y cache ──────────────────────────────────────────────────
 RUN mkdir -p storage/framework/{sessions,views,cache} \
              storage/logs bootstrap/cache \
     && chown -R www-data:www-data storage bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache
 
-EXPOSE 9000
-CMD ["php-fpm"]
+EXPOSE 10000
+
+# ── Servidor HTTP integrado para Render ────────────────────────────────────────
+CMD ["php", "-S", "0.0.0.0:10000", "-t", "public"]
